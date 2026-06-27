@@ -199,4 +199,4 @@ python main.py --output-dir out --chat "某个群"
 
 ## 许可证
 
-保留原项目许可证或按你的仓库设置为准。
+本仓库采用 MIT License，详见 [LICENSE](</home/ubuntu/Github/wechat-suite/LICENSE>).
