@@ -21,6 +21,7 @@
 **/config.local.json
 **/config.secret.yaml
 **/config.secret.json
+**/.runtime-config-*.yaml
 **/all_keys.json
 **/wxwork_keys.json
 **/memory.yaml

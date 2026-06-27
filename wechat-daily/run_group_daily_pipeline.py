@@ -15,12 +15,23 @@ from summarize_export_chat import (
 )
 
 
+def find_venv_python(project_dir: Path) -> Path:
+    candidates = [
+        project_dir / ".venv" / "bin" / "python",
+        project_dir / ".venv" / "bin" / "python3",
+        project_dir / ".venv" / "Scripts" / "python.exe",
+        project_dir / ".venv" / "Scripts" / "python",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise SystemExit(f"missing python in virtualenv: {project_dir / '.venv'}")
+
+
 def run_export(decrypt_repo: Path, chat_name: str, export_json: Path) -> None:
-    decrypt_python = decrypt_repo / ".venv" / "bin" / "python"
+    decrypt_python = find_venv_python(decrypt_repo)
     export_script = decrypt_repo / "export_chat.py"
 
-    if not decrypt_python.exists():
-        raise SystemExit(f"missing decrypt python: {decrypt_python}")
     if not export_script.exists():
         raise SystemExit(f"missing export script: {export_script}")
 

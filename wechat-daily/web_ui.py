@@ -36,9 +36,15 @@ def default_config_path() -> Path:
 
 
 def project_python() -> Path:
-    venv_python = PROJECT_DIR / ".venv" / "bin" / "python"
-    if venv_python.exists():
-        return venv_python
+    candidates = [
+        PROJECT_DIR / ".venv" / "bin" / "python",
+        PROJECT_DIR / ".venv" / "bin" / "python3",
+        PROJECT_DIR / ".venv" / "Scripts" / "python.exe",
+        PROJECT_DIR / ".venv" / "Scripts" / "python",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
     return Path(sys.executable)
 
 
@@ -141,7 +147,14 @@ def run_generation(config_path: Path, payload: dict) -> dict:
         input_json = f"markdown_exports/{safe_name(chat_name)}-export.json"
 
     python = str(project_python())
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as handle:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        prefix=".runtime-config-",
+        suffix=".yaml",
+        delete=False,
+        encoding="utf-8",
+        dir=PROJECT_DIR,
+    ) as handle:
         yaml.safe_dump(runtime_config, handle, allow_unicode=True, sort_keys=False)
         temp_config_path = Path(handle.name)
 
