@@ -1,11 +1,16 @@
 # WeChat Suite
 
-WeChat Suite 是一个面向本地微信聊天记录的整理工具包。它把两个能力组合到一个仓库里：先从真实微信数据库导出聊天记录，再用大模型按天生成 Markdown 群聊日报。
+WeChat Suite 是一个面向本地微信聊天记录的整理工具包。它把两个能力组合到一个仓库里：先从真实微信数据库导出聊天记录，再用大模型按天生成 Markdown 总结，并可渲染成 Figma 风格 PNG。
 
 ## 功能特性
 
 - 从本地微信数据库导出指定群聊记录
 - 按日期生成群聊日报 Markdown
+- 生成微信个人对话总结
+- 生成指定群聊中某个人的发言总结
+- 支持按开始/结束时间筛选聊天记录，跨天时间段可写完整日期时间
+- 提供本地浏览器操作页面，选择配置后点击生成
+- 将总结 Markdown 转成 Figma 风格 PNG
 - 支持 DeepSeek、NewAPI 以及 OpenAI 兼容接口
 - 保留 `wechat-daily` 原有的控制台输出、Markdown 输出和 Notion 流程
 - 将导出文件、日志、密钥和本地配置默认排除在 Git 之外
@@ -28,7 +33,7 @@ wechat-daily 读取 JSON 并筛选指定日期
   ↓
 调用 DeepSeek / NewAPI / OpenAI 兼容模型
   ↓
-生成 Markdown 群聊日报
+生成 Markdown 总结，可选 PNG
 ```
 
 ## 环境要求
@@ -100,17 +105,22 @@ ai:
 #   model: "gpt-4o-mini"
 #   base_url: "http://127.0.0.1:3000/v1"
 
-group_daily:
+chat_summary:
   chat_name: "Walk AI Coding"
   date: "2026-06-23"
+  mode: "group"
+  render_png: true
 ```
 
 说明：
 
-- `group_daily.chat_name`：要总结的群聊名称
-- `group_daily.date`：要总结的日期，格式为 `YYYY-MM-DD`
+- `chat_summary.chat_name`：要总结的群聊名称、联系人显示名、备注名或 wxid
+- `chat_summary.date`：要总结的日期，格式为 `YYYY-MM-DD`
+- `chat_summary.mode`：`group` 群聊日报、`private` 个人对话总结、`speaker` 群内指定成员发言总结
+- `chat_summary.speaker`：`mode: speaker` 时填写群内发言人的 sender 名称或 wxid
+- `chat_summary.render_png`：是否额外生成 Figma 风格 PNG
 - `ai.api_key`：你的模型 API Key
-- `group_daily.decrypt_repo`：默认是 `../wechat-decrypt`，通常不用改
+- `chat_summary.decrypt_repo`：默认是 `../wechat-decrypt`，通常不用改
 
 ## 一键运行
 
@@ -120,7 +130,7 @@ group_daily:
 ./run.sh
 ```
 
-脚本会自动优先读取：
+脚本会启动本地 Web 页面，并自动优先读取：
 
 ```text
 wechat-daily/config.local.yaml
@@ -132,13 +142,43 @@ wechat-daily/config.local.yaml
 wechat-daily/config.yaml
 ```
 
+默认地址是：
+
+```text
+http://127.0.0.1:8765/
+```
+
+如果端口被占用，会自动尝试后续端口。页面里可以选择会话、模式、日期、时间段、是否重新导出聊天记录，然后点击生成；PNG 由浏览器直接下载，不需要 Playwright。
+
+如果仍想使用原来的命令行流水线：
+
+```bash
+./run.sh --cli wechat-daily/config.local.yaml
+```
+
+## 浏览器操作页面
+
+`./run.sh` 会启动本地 Web UI。左侧是配置区，右侧是生成后的 Figma 风格报告预览。
+
+![WeChat Summary Web UI](docs/images/web-ui-summary.png)
+
+页面支持：
+
+- 选择群聊、个人对话或群聊指定成员总结
+- 填写日期、开始时间、结束时间
+- 选择已有导出 JSON，或勾选“重新导出聊天记录”
+- 点击“生成”后预览 Markdown 总结
+- 点击“下载 PNG”，由浏览器直接生成图片
+
+浏览器生成 PNG 不需要安装 Playwright；只有命令行 `summarize_export_chat.py --png` 这一路径才需要 Playwright。
+
 ## 输出位置
 
 运行后会生成两个目录：
 
 ```text
 wechat-daily/markdown_exports/       # 中间 JSON 导出文件
-wechat-daily/group_daily_exports/    # 最终 Markdown 日报
+wechat-daily/group_daily_exports/    # 最终 Markdown / PNG 总结
 ```
 
 示例文件名：
@@ -146,6 +186,7 @@ wechat-daily/group_daily_exports/    # 最终 Markdown 日报
 ```text
 wechat-daily/markdown_exports/Walk_AI_Coding-export.json
 wechat-daily/group_daily_exports/2026-06-23-Walk_AI_Coding-summary.md
+wechat-daily/group_daily_exports/2026-06-23-Walk_AI_Coding-summary.png
 ```
 
 ## 常用命令
@@ -169,6 +210,44 @@ cd wechat-daily
 ```bash
 cd wechat-daily
 .venv/bin/python main.py --output-dir group_daily_exports --chat "群名" --date 2026-06-23
+```
+
+生成个人对话总结并导出 PNG：
+
+```yaml
+chat_summary:
+  chat_name: "某联系人"
+  date: "2026-06-23"
+  mode: "private"
+  start_time: "09:00"
+  end_time: "18:30"
+  render_png: true
+  input_json: "markdown_exports/某联系人-export.json"
+```
+
+总结群聊里某个人的发言：
+
+```yaml
+chat_summary:
+  chat_name: "Walk AI Coding"
+  date: "2026-06-23"
+  mode: "speaker"
+  speaker: "Walk-gpt"
+  start_time: "2026-06-23 23:30"
+  end_time: "2026-06-24 02:00"
+  render_png: true
+  input_json: "markdown_exports/Walk_AI_Coding-export.json"
+```
+
+写入 `wechat-daily/config.local.yaml` 后，在仓库根目录执行 `./run.sh` 即可。
+`start_time/end_time` 可留空；只写 `09:00` 时表示 `date` 当天，需要跨天时写完整日期时间。
+
+如果使用命令行 `--png` 导出，首次运行前安装浏览器内核：
+
+```bash
+cd wechat-daily
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m playwright install chromium
 ```
 
 ## 安全注意事项

@@ -69,3 +69,67 @@ processing:
 logging:
   level: "INFO"
   file: "logs/run.log"
+
+# ---------- 指定会话总结 ----------
+# 这些参数都可以写到配置里，运行时就不用写很长的命令。
+# run_group_daily.sh / run_group_daily_pipeline.py / summarize_export_chat.py
+# 会优先读取 chat_summary；没有配置时兼容旧的 group_daily。
+#
+# 最短运行命令：
+#   ./run_group_daily.sh config.local.yaml
+#
+# mode:
+#   group   = 群聊日报
+#   private = 微信个人对话总结
+#   speaker = 指定群聊中某个人的发言总结
+#
+# 时间段可选：
+#   start_time/end_time 留空 = 总结 date 当天全部消息
+#   "09:00"             = date 当天 09:00
+#   "23:30" 到 "01:00" 不能表示跨天；跨天请写完整日期时间
+#   "2026-06-23 23:30" = 指定日期时间，可跨天
+#
+# 当前启用的配置：群聊日报 + 同时导出 Figma 风格 PNG
+chat_summary:
+  chat_name: "Walk AI Coding"         # 群名、联系人显示名、备注名或 wxid
+  date: "today"                       # YYYY-MM-DD 或 today
+  mode: "group"
+  start_time: ""                       # 可选: "09:00" 或 "2026-06-23 09:00"
+  end_time: ""                         # 可选: "18:30" 或 "2026-06-23 18:30"
+  speaker: ""                         # mode=speaker 时填写 sender 名称或 wxid
+  render_png: false                   # true 时额外生成 Figma 风格 PNG
+  output_dir: "group_daily_exports"
+  input_json: "markdown_exports/Walk_AI_Coding-export.json"
+  decrypt_repo: "../wechat-decrypt"
+  max_messages: 260
+  # png_output: "group_daily_exports/custom-name.png"  # 可选；不填则与 Markdown 同名
+
+# ---------- 配置示例：微信个人对话总结 ----------
+# 把上面的 chat_summary 替换成下面这段即可。
+# chat_summary:
+#   chat_name: "某联系人"                         # 联系人显示名、备注名或 wxid
+#   date: "2026-06-23"
+#   mode: "private"
+#   start_time: "09:00"
+#   end_time: "18:30"
+#   render_png: true
+#   output_dir: "group_daily_exports"
+#   input_json: "markdown_exports/某联系人-export.json"
+#   decrypt_repo: "../wechat-decrypt"
+#   max_messages: 260
+
+# ---------- 配置示例：群聊里某个人发言总结 ----------
+# speaker 必须和导出 JSON 里的 messages[].sender 一致。
+# 如果群成员没有昵称，可能会是 wxid_xxx；可以先打开导出的 JSON 查 sender。
+# chat_summary:
+#   chat_name: "Walk AI Coding"
+#   date: "2026-06-23"
+#   mode: "speaker"
+#   speaker: "Walk-gpt"
+#   start_time: "2026-06-23 23:30"     # 跨天时间段要写完整日期时间
+#   end_time: "2026-06-24 02:00"
+#   render_png: true
+#   output_dir: "group_daily_exports"
+#   input_json: "markdown_exports/Walk_AI_Coding-export.json"
+#   decrypt_repo: "../wechat-decrypt"
+#   max_messages: 260

@@ -10,6 +10,9 @@ requests>=2.31.0
 # 配置管理
 pyyaml>=6.0
 
+# Markdown 转 PNG（Figma 风格截图）
+playwright>=1.40.0
+
 # ---------- 直接读取微信数据库（wechat_core）----------
 # 数据库解密（必需）
 cryptography>=41.0.0

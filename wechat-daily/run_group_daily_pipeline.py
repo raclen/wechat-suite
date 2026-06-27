@@ -32,24 +32,46 @@ def run_export(decrypt_repo: Path, chat_name: str, export_json: Path) -> None:
     )
 
 
-def run_summary(project_dir: Path, config_path: Path, chat_name: str, target_date: str, export_json: Path) -> None:
+def run_summary(
+    project_dir: Path,
+    config_path: Path,
+    chat_name: str,
+    target_date: str,
+    export_json: Path,
+    mode: str | None = None,
+    speaker: str | None = None,
+    render_png: bool = False,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    output_dir: str | None = None,
+) -> None:
     summarize_script = project_dir / "summarize_export_chat.py"
-    subprocess.run(
-        [
-            sys.executable,
-            str(summarize_script),
-            "--config",
-            str(config_path),
-            "--input",
-            str(export_json),
-            "--date",
-            target_date,
-            "--chat-name",
-            chat_name,
-        ],
-        cwd=str(project_dir),
-        check=True,
-    )
+    command = [
+        sys.executable,
+        str(summarize_script),
+        "--config",
+        str(config_path),
+        "--input",
+        str(export_json),
+        "--date",
+        target_date,
+        "--chat-name",
+        chat_name,
+    ]
+    if mode:
+        command.extend(["--mode", mode])
+    if speaker:
+        command.extend(["--speaker", speaker])
+    if render_png:
+        command.append("--png")
+    if start_time:
+        command.extend(["--start-time", start_time])
+    if end_time:
+        command.extend(["--end-time", end_time])
+    if output_dir:
+        command.extend(["--output-dir", output_dir])
+
+    subprocess.run(command, cwd=str(project_dir), check=True)
 
 
 def main() -> int:
@@ -58,13 +80,19 @@ def main() -> int:
     parser.add_argument("--chat-name", help="Override group_daily.chat_name")
     parser.add_argument("--date", help='Override group_daily.date, format YYYY-MM-DD or "today"')
     parser.add_argument("--input", help="Override group_daily.input_json")
+    parser.add_argument("--output-dir", help="Override chat_summary.output_dir")
     parser.add_argument("--decrypt-repo", help="Override group_daily.decrypt_repo")
+    parser.add_argument("--mode", choices=["group", "private", "speaker"], help="Summary mode")
+    parser.add_argument("--speaker", help="Only summarize this sender in a group chat")
+    parser.add_argument("--start-time", help="Start time: HH:MM or YYYY-MM-DD HH:MM")
+    parser.add_argument("--end-time", help="End time: HH:MM or YYYY-MM-DD HH:MM")
+    parser.add_argument("--png", action="store_true", help="Also render generated Markdown to PNG")
     args = parser.parse_args()
 
     config_path = Path(args.config).resolve()
     project_dir = config_path.parent
     config = load_config(str(config_path))
-    group_daily_cfg = config.get("group_daily", {}) or {}
+    group_daily_cfg = config.get("chat_summary", {}) or config.get("group_daily", {}) or {}
 
     chat_name = args.chat_name or group_daily_cfg.get("chat_name")
     if not chat_name:
@@ -72,7 +100,13 @@ def main() -> int:
 
     target_date = resolve_target_date(args.date or group_daily_cfg.get("date"))
     input_value = args.input or group_daily_cfg.get("input_json") or f"markdown_exports/{safe_name(chat_name)}-export.json"
+    output_dir = args.output_dir or group_daily_cfg.get("output_dir")
     decrypt_repo_value = args.decrypt_repo or group_daily_cfg.get("decrypt_repo") or "../wechat-decrypt"
+    mode = args.mode or group_daily_cfg.get("mode", "group")
+    speaker = args.speaker or group_daily_cfg.get("speaker")
+    start_time = args.start_time or group_daily_cfg.get("start_time")
+    end_time = args.end_time or group_daily_cfg.get("end_time")
+    render_png = args.png or bool(group_daily_cfg.get("render_png", False))
 
     export_json = resolve_config_path(config_path, input_value)
     decrypt_repo = resolve_config_path(config_path, decrypt_repo_value)
@@ -80,9 +114,28 @@ def main() -> int:
     print(f"[group_daily] config={config_path}")
     print(f"[group_daily] chat_name={chat_name}")
     print(f"[group_daily] date={target_date}")
+    print(f"[group_daily] mode={mode}")
+    if speaker:
+        print(f"[group_daily] speaker={speaker}")
+    if start_time or end_time:
+        print(f"[group_daily] time_range={start_time or ''}~{end_time or ''}")
+    if render_png:
+        print("[group_daily] png=true")
 
     run_export(decrypt_repo, chat_name, export_json)
-    run_summary(project_dir, config_path, chat_name, target_date, export_json)
+    run_summary(
+        project_dir,
+        config_path,
+        chat_name,
+        target_date,
+        export_json,
+        mode,
+        speaker,
+        render_png,
+        start_time,
+        end_time,
+        output_dir,
+    )
     return 0
 
 
