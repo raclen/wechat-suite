@@ -100,6 +100,8 @@ http://127.0.0.1:8765/
 ![WeChat Summary Web UI](docs/images/web-ui-summary.png)
 
 页面支持选择群聊、个人对话或群聊指定成员总结，也可以填写日期、开始时间、结束时间。PNG 由浏览器直接生成下载，不需要 Playwright。
+时间段筛选在页面里是一个显式开关，勾选后再填写开始和结束时间。
+AI Provider、API Key、模型、Base URL、Max Tokens 在主页面直接配置；高级配置只放解密仓库、导出接口这类低频连接项。
 
 如果仍想使用原来的命令行流水线：
 

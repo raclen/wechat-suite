@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import threading
+import tempfile
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -69,11 +70,65 @@ def find_markdown_path(output: str) -> Path | None:
     return None
 
 
+def deep_merge(base: dict, updates: dict) -> dict:
+    result = dict(base)
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def build_runtime_config(base_config: dict, payload: dict) -> dict:
+    chat_name = (payload.get("chat_name") or "").strip()
+    input_json = (payload.get("input_json") or "").strip()
+    output_dir = (payload.get("output_dir") or "group_daily_exports").strip()
+
+    summary_updates = {
+        "chat_name": chat_name,
+        "date": (payload.get("date") or "today").strip(),
+        "mode": (payload.get("mode") or "group").strip(),
+        "speaker": (payload.get("speaker") or "").strip(),
+        "start_time": (payload.get("start_time") or "").strip(),
+        "end_time": (payload.get("end_time") or "").strip(),
+        "render_png": bool(payload.get("render_png", False)),
+        "output_dir": output_dir,
+        "input_json": input_json or (f"markdown_exports/{safe_name(chat_name)}-export.json" if chat_name else ""),
+        "decrypt_repo": (payload.get("decrypt_repo") or "").strip() or "../wechat-decrypt",
+        "max_messages": int(payload.get("max_messages") or 260),
+    }
+
+    ai_updates = {
+        "provider": (payload.get("ai_provider") or "deepseek").strip(),
+        "model": (payload.get("ai_model") or "").strip(),
+        "max_tokens": int(payload.get("ai_max_tokens") or 4096),
+    }
+    ai_api_key = (payload.get("ai_api_key") or "").strip()
+    if ai_api_key:
+        ai_updates["api_key"] = ai_api_key
+    ai_base_url = (payload.get("ai_base_url") or "").strip()
+    if ai_base_url:
+        ai_updates["base_url"] = ai_base_url
+
+    wechat_updates = {}
+    tool_api_url = (payload.get("tool_api_url") or "").strip()
+    if tool_api_url:
+        wechat_updates["tool_api_url"] = tool_api_url
+
+    config = deep_merge(base_config, {"chat_summary": summary_updates, "ai": ai_updates})
+    if wechat_updates:
+        config = deep_merge(config, {"wechat": wechat_updates})
+    return config
+
+
 def run_generation(config_path: Path, payload: dict) -> dict:
     chat_name = (payload.get("chat_name") or "").strip()
     if not chat_name:
         raise ValueError("请填写 chat_name")
 
+    base_config = load_config(config_path)
+    runtime_config = build_runtime_config(base_config, payload)
     date = (payload.get("date") or "today").strip()
     mode = (payload.get("mode") or "group").strip()
     speaker = (payload.get("speaker") or "").strip()
@@ -86,55 +141,63 @@ def run_generation(config_path: Path, payload: dict) -> dict:
         input_json = f"markdown_exports/{safe_name(chat_name)}-export.json"
 
     python = str(project_python())
-    if export_first:
-        command = [
-            python,
-            str(PROJECT_DIR / "run_group_daily_pipeline.py"),
-            "--config",
-            str(config_path),
-            "--chat-name",
-            chat_name,
-            "--date",
-            date,
-            "--input",
-            input_json,
-            "--output-dir",
-            output_dir,
-            "--mode",
-            mode,
-        ]
-    else:
-        command = [
-            python,
-            str(PROJECT_DIR / "summarize_export_chat.py"),
-            "--config",
-            str(config_path),
-            "--chat-name",
-            chat_name,
-            "--date",
-            date,
-            "--input",
-            input_json,
-            "--output-dir",
-            output_dir,
-            "--mode",
-            mode,
-        ]
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as handle:
+        yaml.safe_dump(runtime_config, handle, allow_unicode=True, sort_keys=False)
+        temp_config_path = Path(handle.name)
 
-    if speaker:
-        command.extend(["--speaker", speaker])
-    if start_time:
-        command.extend(["--start-time", start_time])
-    if end_time:
-        command.extend(["--end-time", end_time])
+    try:
+        if export_first:
+            command = [
+                python,
+                str(PROJECT_DIR / "run_group_daily_pipeline.py"),
+                "--config",
+                str(temp_config_path),
+                "--chat-name",
+                chat_name,
+                "--date",
+                date,
+                "--input",
+                input_json,
+                "--output-dir",
+                output_dir,
+                "--mode",
+                mode,
+            ]
+        else:
+            command = [
+                python,
+                str(PROJECT_DIR / "summarize_export_chat.py"),
+                "--config",
+                str(temp_config_path),
+                "--chat-name",
+                chat_name,
+                "--date",
+                date,
+                "--input",
+                input_json,
+                "--output-dir",
+                output_dir,
+                "--mode",
+                mode,
+            ]
 
-    completed = subprocess.run(
-        command,
-        cwd=str(PROJECT_DIR),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+        if speaker:
+            command.extend(["--speaker", speaker])
+        if start_time:
+            command.extend(["--start-time", start_time])
+        if end_time:
+            command.extend(["--end-time", end_time])
+
+        completed = subprocess.run(
+            command,
+            cwd=str(PROJECT_DIR),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    finally:
+        temp_config_path.unlink(missing_ok=True)
+
     output = "\n".join(part for part in [completed.stdout, completed.stderr] if part)
     if completed.returncode != 0:
         raise RuntimeError(output.strip() or f"生成失败，退出码 {completed.returncode}")
@@ -152,10 +215,18 @@ def run_generation(config_path: Path, payload: dict) -> dict:
 
 def build_defaults(config_path: Path) -> dict:
     config = load_config(config_path)
+    ai_cfg = config.get("ai", {}) or {}
+    wechat_cfg = config.get("wechat", {}) or {}
     summary_cfg = config.get("chat_summary", {}) or config.get("group_daily", {}) or {}
     chat_name = summary_cfg.get("chat_name", "")
     return {
         "config_path": str(config_path),
+        "ai_provider": ai_cfg.get("provider", "deepseek"),
+        "ai_api_key": "",
+        "ai_model": ai_cfg.get("model", ""),
+        "ai_base_url": ai_cfg.get("base_url", ""),
+        "ai_max_tokens": ai_cfg.get("max_tokens", 4096),
+        "tool_api_url": wechat_cfg.get("tool_api_url", "http://127.0.0.1:10392"),
         "chat_name": chat_name,
         "date": summary_cfg.get("date", "today"),
         "mode": summary_cfg.get("mode", "group"),
@@ -164,6 +235,8 @@ def build_defaults(config_path: Path) -> dict:
         "end_time": summary_cfg.get("end_time", ""),
         "render_png": bool(summary_cfg.get("render_png", True)),
         "output_dir": summary_cfg.get("output_dir", "group_daily_exports"),
+        "decrypt_repo": summary_cfg.get("decrypt_repo", "../wechat-decrypt"),
+        "max_messages": summary_cfg.get("max_messages", 260),
         "input_json": summary_cfg.get("input_json") or (
             f"markdown_exports/{safe_name(chat_name)}-export.json" if chat_name else ""
         ),
@@ -333,6 +406,52 @@ INDEX_HTML = r"""<!doctype html>
       gap: 7px;
       margin-bottom: 13px;
     }
+    .panel {
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .66);
+    }
+    .details-panel {
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .66);
+      overflow: hidden;
+    }
+    .details-panel summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px;
+      color: #344054;
+      font-size: 13px;
+      font-weight: 750;
+      user-select: none;
+    }
+    .details-panel summary::-webkit-details-marker {
+      display: none;
+    }
+    .details-panel summary::after {
+      content: "+";
+      float: right;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .details-panel[open] summary::after {
+      content: "-";
+    }
+    .details-body {
+      padding: 0 14px 14px;
+      border-top: 1px solid var(--line);
+    }
+    .panel-title {
+      margin: 0 0 10px;
+      color: #344054;
+      font-size: 13px;
+      font-weight: 750;
+    }
     label {
       color: #344054;
       font-size: 12px;
@@ -357,6 +476,12 @@ INDEX_HTML = r"""<!doctype html>
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
+    }
+    .section-note {
+      margin: -2px 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
     .check {
       min-height: 36px;
@@ -551,60 +676,124 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <p class="config-path" id="configPath"></p>
 
-      <div class="field">
-        <label for="chatName">会话</label>
-        <input id="chatName" autocomplete="off">
-      </div>
-
-      <div class="field">
-        <label for="inputJson">导出 JSON</label>
-        <input id="inputJson" list="jsonList" autocomplete="off">
-        <datalist id="jsonList"></datalist>
-      </div>
-
-      <div class="row">
-        <div class="field">
-          <label for="date">日期</label>
-          <input id="date" autocomplete="off">
+      <section class="panel">
+        <h2 class="panel-title">AI</h2>
+        <div class="row">
+          <div class="field">
+            <label for="aiProvider">Provider</label>
+            <select id="aiProvider">
+              <option value="deepseek">deepseek</option>
+              <option value="newapi">newapi</option>
+              <option value="qwen">qwen</option>
+              <option value="openai">openai</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="aiModel">Model</label>
+            <input id="aiModel" autocomplete="off">
+          </div>
         </div>
         <div class="field">
-          <label for="mode">模式</label>
-          <select id="mode">
-            <option value="group">群聊</option>
-            <option value="private">个人</option>
-            <option value="speaker">成员</option>
-          </select>
+          <label for="aiApiKey">API Key</label>
+          <input id="aiApiKey" type="password" autocomplete="off" placeholder="留空则沿用配置文件里的 key">
         </div>
-      </div>
+        <div class="row">
+          <div class="field">
+            <label for="aiBaseUrl">Base URL</label>
+            <input id="aiBaseUrl" autocomplete="off" placeholder="可留空">
+          </div>
+          <div class="field">
+            <label for="aiMaxTokens">Max Tokens</label>
+            <input id="aiMaxTokens" type="number" min="1" step="1">
+          </div>
+        </div>
+      </section>
 
-      <div class="field">
-        <label for="speaker">成员</label>
-        <input id="speaker" autocomplete="off">
-      </div>
-
-      <div class="row">
+      <section class="panel">
+        <h2 class="panel-title">总结配置</h2>
         <div class="field">
-          <label for="startTime">开始</label>
-          <input id="startTime" placeholder="09:00">
+          <label for="chatName">会话</label>
+          <input id="chatName" autocomplete="off">
         </div>
-        <div class="field">
-          <label for="endTime">结束</label>
-          <input id="endTime" placeholder="18:30">
-        </div>
-      </div>
 
-      <div class="field">
-        <label for="outputDir">输出目录</label>
-        <input id="outputDir" autocomplete="off">
-      </div>
+        <div class="field">
+          <label for="inputJson">导出 JSON</label>
+          <input id="inputJson" list="jsonList" autocomplete="off">
+          <datalist id="jsonList"></datalist>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="date">日期</label>
+            <input id="date" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="mode">模式</label>
+            <select id="mode">
+              <option value="group">群聊</option>
+              <option value="private">个人</option>
+              <option value="speaker">成员</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="check"><input id="rangeEnabled" type="checkbox">启用时间段筛选</label>
+        <p class="section-note">留空表示总结整天；只填 <code>09:00</code> 这类时间表示 <code>date</code> 当天的时间段；跨天请写完整日期时间，例如 <code>2026-06-23 23:30</code> 到 <code>2026-06-24 02:00</code>。</p>
+
+        <div class="field">
+          <label for="speaker">成员</label>
+          <input id="speaker" autocomplete="off">
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="startTime">开始</label>
+            <input id="startTime" placeholder="09:00">
+          </div>
+          <div class="field">
+            <label for="endTime">结束</label>
+            <input id="endTime" placeholder="18:30">
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="outputDir">输出目录</label>
+            <input id="outputDir" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="maxMessages">最大消息数</label>
+            <input id="maxMessages" type="number" min="1" step="1">
+          </div>
+        </div>
+      </section>
 
       <label class="check"><input id="exportFirst" type="checkbox">重新导出聊天记录</label>
       <label class="check"><input id="autoPng" type="checkbox">生成后下载 PNG</label>
+
+      <details class="details-panel">
+        <summary>高级配置</summary>
+        <div class="details-body">
+          <section class="panel">
+            <h2 class="panel-title">连接</h2>
+            <div class="field">
+              <label for="decryptRepo">解密仓库</label>
+              <input id="decryptRepo" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="toolApiUrl">导出接口 URL</label>
+              <input id="toolApiUrl" autocomplete="off">
+            </div>
+            <p class="section-note">这里留空就沿用配置文件默认值。</p>
+          </section>
+        </div>
+      </details>
 
       <div class="actions">
         <button class="primary" id="generateBtn">生成</button>
         <button id="downloadBtn" disabled>下载 PNG</button>
       </div>
+
       <p class="status" id="status"></p>
     </aside>
 
@@ -627,14 +816,23 @@ INDEX_HTML = r"""<!doctype html>
   <script>
     const defaults = __DEFAULTS__;
     const fields = {
+      aiProvider: document.getElementById("aiProvider"),
+      aiApiKey: document.getElementById("aiApiKey"),
+      aiModel: document.getElementById("aiModel"),
+      aiBaseUrl: document.getElementById("aiBaseUrl"),
+      aiMaxTokens: document.getElementById("aiMaxTokens"),
       chatName: document.getElementById("chatName"),
       inputJson: document.getElementById("inputJson"),
       date: document.getElementById("date"),
       mode: document.getElementById("mode"),
       speaker: document.getElementById("speaker"),
+      rangeEnabled: document.getElementById("rangeEnabled"),
       startTime: document.getElementById("startTime"),
       endTime: document.getElementById("endTime"),
       outputDir: document.getElementById("outputDir"),
+      decryptRepo: document.getElementById("decryptRepo"),
+      maxMessages: document.getElementById("maxMessages"),
+      toolApiUrl: document.getElementById("toolApiUrl"),
       exportFirst: document.getElementById("exportFirst"),
       autoPng: document.getElementById("autoPng")
     };
@@ -646,6 +844,11 @@ INDEX_HTML = r"""<!doctype html>
     let currentMarkdown = "";
 
     document.getElementById("configPath").textContent = defaults.config_path || "";
+    fields.aiProvider.value = defaults.ai_provider || "deepseek";
+    fields.aiApiKey.value = defaults.ai_api_key || "";
+    fields.aiModel.value = defaults.ai_model || "";
+    fields.aiBaseUrl.value = defaults.ai_base_url || "";
+    fields.aiMaxTokens.value = defaults.ai_max_tokens || 4096;
     fields.chatName.value = defaults.chat_name || "";
     fields.inputJson.value = defaults.input_json || "";
     fields.date.value = defaults.date || "today";
@@ -653,7 +856,11 @@ INDEX_HTML = r"""<!doctype html>
     fields.speaker.value = defaults.speaker || "";
     fields.startTime.value = defaults.start_time || "";
     fields.endTime.value = defaults.end_time || "";
+    fields.rangeEnabled.checked = !!(defaults.start_time || defaults.end_time);
     fields.outputDir.value = defaults.output_dir || "group_daily_exports";
+    fields.decryptRepo.value = defaults.decrypt_repo || "../wechat-decrypt";
+    fields.maxMessages.value = defaults.max_messages || 260;
+    fields.toolApiUrl.value = defaults.tool_api_url || "http://127.0.0.1:10392";
     fields.exportFirst.checked = defaults.export_first !== false;
     fields.autoPng.checked = !!defaults.render_png;
 
@@ -666,14 +873,23 @@ INDEX_HTML = r"""<!doctype html>
 
     function payload() {
       return {
+        ai_provider: fields.aiProvider.value,
+        ai_api_key: fields.aiApiKey.value.trim(),
+        ai_model: fields.aiModel.value.trim(),
+        ai_base_url: fields.aiBaseUrl.value.trim(),
+        ai_max_tokens: fields.aiMaxTokens.value.trim(),
         chat_name: fields.chatName.value.trim(),
         input_json: fields.inputJson.value.trim(),
         date: fields.date.value.trim(),
         mode: fields.mode.value,
         speaker: fields.speaker.value.trim(),
-        start_time: fields.startTime.value.trim(),
-        end_time: fields.endTime.value.trim(),
+        start_time: fields.rangeEnabled.checked ? fields.startTime.value.trim() : "",
+        end_time: fields.rangeEnabled.checked ? fields.endTime.value.trim() : "",
         output_dir: fields.outputDir.value.trim(),
+        decrypt_repo: fields.decryptRepo.value.trim(),
+        max_messages: fields.maxMessages.value.trim(),
+        tool_api_url: fields.toolApiUrl.value.trim(),
+        render_png: fields.autoPng.checked,
         export_first: fields.exportFirst.checked
       };
     }
@@ -781,6 +997,14 @@ INDEX_HTML = r"""<!doctype html>
       const chat = (fields.chatName.value || "wechat-summary").replace(/[^\w.-]+/g, "_");
       const date = (fields.date.value || "today").replace(/[^\w.-]+/g, "_");
       return `${date}-${chat}-summary`;
+    }
+
+    function syncRangeState() {
+      const enabled = fields.rangeEnabled.checked;
+      fields.startTime.disabled = !enabled;
+      fields.endTime.disabled = !enabled;
+      fields.startTime.parentElement.style.opacity = enabled ? "1" : ".55";
+      fields.endTime.parentElement.style.opacity = enabled ? "1" : ".55";
     }
 
     function plainMarkdown(value) {
@@ -968,6 +1192,8 @@ INDEX_HTML = r"""<!doctype html>
 
     generateBtn.addEventListener("click", generate);
     downloadBtn.addEventListener("click", downloadPng);
+    fields.rangeEnabled.addEventListener("change", syncRangeState);
+    syncRangeState();
   </script>
 </body>
 </html>

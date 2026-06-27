@@ -148,7 +148,7 @@ wechat-daily/config.yaml
 http://127.0.0.1:8765/
 ```
 
-如果端口被占用，会自动尝试后续端口。页面里可以选择会话、模式、日期、时间段、是否重新导出聊天记录，然后点击生成；PNG 由浏览器直接下载，不需要 Playwright。
+如果端口被占用，会自动尝试后续端口。页面里可以选择会话、模式、日期、时间段开关、是否重新导出聊天记录，然后点击生成；PNG 由浏览器直接下载，不需要 Playwright。
 
 如果仍想使用原来的命令行流水线：
 
@@ -164,13 +164,15 @@ http://127.0.0.1:8765/
 
 页面支持：
 
+- 配置 AI Provider、API Key、模型、Base URL、Max Tokens
 - 选择群聊、个人对话或群聊指定成员总结
 - 填写日期、开始时间、结束时间
+- 开启或关闭时间段筛选
 - 选择已有导出 JSON，或勾选“重新导出聊天记录”
 - 点击“生成”后预览 Markdown 总结
 - 点击“下载 PNG”，由浏览器直接生成图片
 
-浏览器生成 PNG 不需要安装 Playwright；只有命令行 `summarize_export_chat.py --png` 这一路径才需要 Playwright。
+高级配置只放解密仓库、导出接口这类低频连接项。浏览器生成 PNG 不需要安装 Playwright；只有命令行 `summarize_export_chat.py --png` 这一路径才需要 Playwright。
 
 ## 输出位置
 
