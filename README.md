@@ -38,11 +38,21 @@ wechat-daily 读取 JSON 并筛选指定日期
 
 ## 环境要求
 
-- Linux / Ubuntu
+- Linux / Ubuntu 是当前一键流程的主要支持环境
 - Python 3.12+
 - 已登录且有本地数据的微信客户端
 - 可用的 DeepSeek、NewAPI 或其他 OpenAI 兼容模型 API Key
 - 已完成 `wechat-decrypt` 所需的微信数据库密钥提取
+
+## 平台兼容性
+
+| 平台 | 当前可用性 | 说明 |
+|---|---|---|
+| Linux / Ubuntu | 推荐，当前主路径 | `./run.sh`、虚拟环境路径、数据库导出和总结 Web UI 都按 Linux 环境验证 |
+| macOS | 可用，但解密步骤更复杂 | `wechat-daily` 的总结和 Web UI 基本可用；`wechat-decrypt` 支持 macOS，但密钥提取通常需要退出微信、重签名 `/Applications/WeChat.app`、root 权限和编译 macOS 扫描器 |
+| Windows | 部分可用，不是当前一键主路径 | `wechat-decrypt` 自身支持 Windows CLI/Web UI/GUI；但本仓库根目录的 `run.sh`、`.venv/bin/python` 路径和 `run_group_daily_pipeline.py` 的导出调用偏 Unix。Windows 可先用 `wechat-decrypt` 导出 JSON，再在 `wechat-daily` 中用 Python 运行总结；要做到一键体验需要补 `.bat`/PowerShell 入口和 Windows venv 路径适配 |
+
+简短结论：如果只是“已有导出 JSON → 生成 Markdown/PNG 总结”，macOS 和 Windows 都比较容易跑通；如果要“自动从本机微信数据库提取密钥、解密、导出、总结”全链路，Linux 当前最稳，macOS 次之，Windows 需要额外适配 Suite 的入口脚本。
 
 ## 安装依赖
 

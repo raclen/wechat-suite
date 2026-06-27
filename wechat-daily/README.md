@@ -18,10 +18,18 @@
 
 ## 适用环境
 
-- Linux / Ubuntu
+- Linux / Ubuntu 是当前一键流程的主要支持环境
 - Python 3.12+
 - 已解密的微信数据库或可通过 `wechat-decrypt` 读取的微信数据
 - DeepSeek、NewAPI 或其他 OpenAI 兼容模型 API Key
+
+## 平台兼容性
+
+| 平台 | 当前可用性 | 说明 |
+|---|---|---|
+| Linux / Ubuntu | 推荐，当前主路径 | `./run.sh`、`./run_group_daily.sh` 和自动导出流程按 Linux 环境验证 |
+| macOS | 基本可用 | 总结脚本和 Web UI 是 Python/浏览器实现，通常可运行；自动导出依赖 `wechat-decrypt` 的 macOS 密钥提取和解密流程，需要重签名微信、root 权限等额外步骤 |
+| Windows | 可处理已导出的 JSON，但一键流程未适配 | `summarize_export_chat.py` 和 Web UI 的总结逻辑可迁移；当前 shell 入口和 `.venv/bin/python` 路径是 Unix 风格，自动导出也需要适配 Windows 的 `.venv\Scripts\python.exe` 或单独用 `wechat-decrypt` 先导出 JSON |
 
 ## 快速开始
 
